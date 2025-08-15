@@ -1,4 +1,7 @@
-﻿# Projeto-FSD
+﻿# UART full‐duplex com verificação de CRC - Transmissão e recebimento de mensagens com
+detecção de erro e exibição de resultados em display. Implementado em uma FPGA DE2
+
+
 
 ## clock_divider.v 
 
@@ -120,3 +123,4 @@ A demonstração da funcionalidade full-duplex é a prova final da capacidade de
 
 
 * Teste de Loopback: Utilizando uma única placa, o pino UART_TXD é fisicamente conectado ao UART_RXD. O projeto é configurado para enviar um pacote de dados com CRC e, em seguida, receber e verificar o mesmo pacote. A funcionalidade é validada quando o sistema realiza ambas as operações com sucesso e exibe um resultado positivo na verificação de CRC, indicando que a arquitetura do transmissor e do receptor operam de forma independente e correta.
+
