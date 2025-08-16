@@ -7,7 +7,7 @@ module display_decoder (
 // Padrões de 7 segmentos para o ânodo comum (0=ligado, 1=desligado)
 // O padrão é {a,b,c,d,e,f,g}
 localparam OKAY_O = 7'b0000001; // O
-localparam OKAY_K = 7'b0000001; // Para simplificar, o 'K' pode ser representado por algo simples
+localparam OKAY_K = 7'b0000100; // 'K' (representação de um 'k' minúsculo)
 localparam ERR_E  = 7'b0000110; // E
 localparam ERR_R  = 7'b0101111; // R
 

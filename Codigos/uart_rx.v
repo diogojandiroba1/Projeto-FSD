@@ -45,7 +45,7 @@ always @(posedge clk or posedge reset) begin
 
         case (current_state)
             IDLE: begin
-                if (!rx_in_d && rx_in_sync) begin // Detecta a borda de descida do start bit
+                if (rx_in_d && !rx_in_sync) begin // Detecta a borda de descida do start bit
                     next_state = START_DETECT;
                 end else begin
                     next_state = IDLE;
