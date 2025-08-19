@@ -1,93 +1,62 @@
 module uart_tx (
-    input wire clk,
-    input wire reset,
-    input wire baud_clk_en,
-    input wire [7:0] data_in,
-    input wire start_tx,
-    output reg tx_out,
+    input clk,
+    input reset,
+    input tx_start,
+    input [7:0] tx_data,
+    output reg tx,
     output reg tx_busy
 );
-
-// Definição dos estados da máquina de estados
-localparam [1:0] IDLE      = 2'b00;
-localparam [1:0] START_BIT = 2'b01;
-localparam [1:0] DATA_BITS = 2'b10;
-localparam [1:0] STOP_BIT  = 2'b11;
-
-// Registradores de estado e dados
-reg [1:0] current_state, next_state;
-reg [7:0] data_buffer;
-reg [2:0] bit_counter; // Contador para os 8 bits de dados (0 a 7)
-
-// Bloco SEQUENCIAL: Atualiza os registradores na borda do clock
-always @(posedge clk or posedge reset) begin
-    if (reset) begin
-        current_state <= IDLE;
-        bit_counter   <= 0;
-        data_buffer   <= 0;
-    end else begin
-        current_state <= next_state;
-        if (next_state == IDLE) begin
-            // Reseta contadores e buffers ao voltar para IDLE
-            bit_counter <= 0;
-        end else if (current_state == IDLE && next_state == START_BIT) begin
-            // Captura o dado de entrada ao iniciar a transmissão
-            data_buffer <= data_in;
-        end else if (baud_clk_en && current_state == DATA_BITS && next_state == DATA_BITS) begin
-            // Incrementa o contador de bits durante a transmissão
-            bit_counter <= bit_counter + 1;
+    
+    parameter CLK_FREQ = 50_000_000;
+    parameter BAUD_RATE = 115200;
+    localparam BIT_TIME = CLK_FREQ / BAUD_RATE;
+    
+    reg [3:0] state;
+    reg [15:0] counter;
+    reg [7:0] shift_reg;
+    
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            state <= 0;
+            tx <= 1'b1;
+            tx_busy <= 1'b0;
+        end else begin
+            case (state)
+                0: begin // Idle
+                    if (tx_start) begin
+                        shift_reg <= tx_data;
+                        state <= 1;
+                        counter <= 0;
+                        tx_busy <= 1'b1;
+                        tx <= 1'b0; // Start bit
+                    end
+                end
+                
+                1: begin // Data bits
+                    if (counter == BIT_TIME-1) begin
+                        counter <= 0;
+                        if (state < 9) begin
+                            tx <= shift_reg[0];
+                            shift_reg <= {1'b0, shift_reg[7:1]};
+                            state <= state + 1;
+                        end else begin
+                            tx <= 1'b1; // Stop bit
+                            state <= 10;
+                        end
+                    end else begin
+                        counter <= counter + 1;
+                    end
+                end
+                
+                10: begin // Stop bit
+                    if (counter == BIT_TIME-1) begin
+                        tx_busy <= 1'b0;
+                        state <= 0;
+                    end else begin
+                        counter <= counter + 1;
+                    end
+                end
+            endcase
         end
     end
-end
-
-// Bloco COMBINACIONAL: Decide os próximos estados e as saídas
-always @(*) begin
-    // Valores padrão
-    next_state = current_state;
-    tx_out = 1'b1; // Linha fica em alta por padrão
-    tx_busy = 1'b0;
-
-    case (current_state)
-        IDLE: begin
-            tx_out = 1'b1;
-            tx_busy = 1'b0;
-            if (start_tx) begin
-                next_state = START_BIT;
-            end
-        end
-
-        START_BIT: begin
-            tx_busy = 1'b1;
-            tx_out = 1'b0; // Envia o bit de start
-            if (baud_clk_en) begin
-                next_state = DATA_BITS;
-            end
-        end
-
-        DATA_BITS: begin
-            tx_busy = 1'b1;
-            tx_out = data_buffer[bit_counter]; // Envia o bit atual
-            if (baud_clk_en) begin
-                if (bit_counter == 7) begin
-                    next_state = STOP_BIT;
-                end else begin
-                    next_state = DATA_BITS; // Permanece no estado para enviar o próximo bit
-                end
-            end
-        end
-
-        STOP_BIT: begin
-            tx_busy = 1'b1;
-            tx_out = 1'b1; // Envia o bit de stop
-            if (baud_clk_en) begin
-                next_state = IDLE;
-            end
-        end
-
-        default: begin
-            next_state = IDLE;
-        end
-    endcase
-end
-
 endmodule
