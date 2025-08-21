@@ -1,126 +1,63 @@
-﻿# UART full‐duplex com verificação de CRC - Transmissão e recebimento de mensagens com detecção de erro e exibição de resultados em display. Implementado em uma FPGA DE2
+﻿# UART Full-Duplex com Verificação de CRC em FPGA DE2
 
+Este projeto implementa um sistema de comunicação serial UART full-duplex com cálculo de verificação de redundância cíclica (CRC). A funcionalidade é demonstrada e validada através de um **teste de loopback interno** em uma placa FPGA, onde o transmissor e o receptor são conectados para verificar a integridade da lógica de comunicação.
 
+## Módulos do Projeto
 
-## clock_divider.v 
+O sistema é modularizado para clareza e reutilização. Os componentes principais são:
 
-* Este módulo é responsável por gerar um clock de baixa frequência a partir do clock principal da placa FPGA. Sua principal função é adaptar a alta frequência de operação da FPGA (50 MHz) para a taxa de transmissão mais lenta exigida pela comunicação serial UART (por exemplo, 9600 bps).
-* O módulo utiliza um contador síncrono para dividir a frequência do clock de entrada. A lógica é baseada na relação entre a frequência do clock da FPGA (CLK_FREQ) e a taxa de transmissão desejada (BAUD_RATE).
-* A constante CLK_PER_BIT é calculada para determinar o número de ciclos do clock de alta frequência que correspondem a um único bit na taxa de BAUD_RATE.
-* O contador (counter) é incrementado a cada borda de subida do clock principal. Quando o contador atinge o valor de CLK_PER_BIT - 1, o sinal do novo clock (baud_clk) é invertido, e o contador é zerado. Esse processo se repete, gerando uma onda quadrada com uma frequência precisa, que é utilizada para sincronizar a transmissão e o recebimento de dados pela UART.
+### `uart_tx.v`
 
-## uart_tx.v e uart_rx.v 
+[cite_start]O Transmissor UART (UART_TX) converte um byte de dados paralelo (8 bits) em um fluxo de dados serial[cite: 74].
 
-### uart_tx.v
-O Transmissor UART (UART_TX) é um módulo fundamental para a comunicação serial. Sua função é converter um byte de dados paralelo (8 bits) em um fluxo de dados serial, adicionando os bits de controle necessários para a transmissão, como o bit de start e o bit de stop.
+-   [cite_start]**Funcionamento:** Opera como uma Máquina de Estados Finitos (FSM) com os estados `IDLE`, `START`, `DATA` e `STOP`[cite: 78].
+-   [cite_start]**Controle de Fluxo:** A transmissão é iniciada por um pulso no sinal `tx_start`[cite: 74]. [cite_start]Enquanto transmite, o sinal `tx_busy` fica ativo para indicar que o módulo está ocupado[cite: 75, 83].
+-   **Temporização:** A temporização dos bits é controlada internamente. [cite_start]O módulo usa as frequências de clock (`CLK_FREQ`) e a taxa de transmissão (`BAUD_RATE`) para calcular o número de ciclos de clock por bit (`BIT_TIME`)[cite: 76]. [cite_start]Um contador interno gerencia a duração de cada bit, eliminando a necessidade de um divisor de clock externo[cite: 77, 88].
+-   [cite_start]**Formato de Envio:** Envia primeiro o bit menos significativo (LSB)[cite: 74, 87].
 
-O módulo opera como uma Máquina de Estados Finitos (FSM). Ele aguarda por um comando de início de transmissão e, então, percorre uma sequência de estados para enviar cada bit no momento certo. O sincronismo é garantido pelo clock de baixa frequência (baud_clk), gerado pelo divisor de clock.
+### `uart_rx.v`
 
-A sequência de transmissão de um byte segue os seguintes passos:
+[cite_start]O Receptor UART (UART_RX) executa a função inversa, convertendo o fluxo serial de volta para um byte de dados paralelo[cite: 1].
 
-* Estado IDLE: O transmissor fica em estado de espera, com o pino de saída (tx_out) em nível lógico alto.
+-   [cite_start]**Funcionamento:** Utiliza uma FSM para gerenciar o processo de recepção (`IDLE`, `START`, `DATA`, `STOP`)[cite: 5].
+-   [cite_start]**Sincronização de Entrada:** Para evitar problemas de metaestabilidade, a entrada `rx` é passada por um sincronizador de dois flip-flops[cite: 6, 7, 8].
+-   [cite_start]**Amostragem Robusta:** A principal característica para garantir a precisão da leitura é a amostragem no **meio de cada bit**[cite: 1]. [cite_start]Após detectar o bit de start, o módulo espera metade do tempo de um bit (`HALF_BIT`) para confirmar o início e, posteriormente, lê cada bit de dados em seu ponto central, onde o sinal é mais estável[cite: 3, 13].
+-   [cite_start]**Saídas de Status:** Ao final da recepção, o módulo gera o sinal `rx_valid` se o quadro foi recebido com sucesso (incluindo a verificação do stop bit)[cite: 2, 21]. [cite_start]Caso o stop bit não seja detectado corretamente, o sinal `rx_error` é ativado[cite: 2, 22].
 
-* Estado START_BIT: Ao receber um sinal para iniciar a transmissão, o módulo transiciona para este estado e coloca o pino tx_out em nível lógico baixo por um período de tempo equivalente a um bit.
+### `crc8.v`
 
-* Estado DATA_BITS: Os 8 bits de dados são enviados um a um. Um contador de bits (bit_counter) é usado para controlar a posição de cada bit a ser transmitido, do bit menos significativo (LSB) para o mais significativo (MSB).
+[cite_start]Este módulo calcula o valor do CRC-8 para um byte de dados[cite: 63].
 
-* Estado STOP_BIT: Após enviar todos os 8 bits de dados, o transmissor coloca o pino tx_out em nível lógico alto por um período de tempo, finalizando a transmissão do byte.
+-   [cite_start]**Algoritmo:** Implementa a divisão polinomial para o polinômio padrão `x^8 + x^2 + x + 1` (representado como `8'h07`)[cite: 63, 65, 67].
+-   [cite_start]**Operação:** O cálculo é realizado de forma combinacional dentro de uma função[cite: 65]. [cite_start]Quando o sinal `data_valid` é ativado, o módulo calcula o CRC para o `data` de entrada e ativa a saída `crc_ready` por um ciclo de clock[cite: 72, 73].
+-   [cite_start]**Escopo:** Nesta implementação, o módulo calcula o CRC para um único byte por vez e não é acumulativo entre diferentes bytes[cite: 63].
 
-Após o envio do bit de stop, o módulo retorna ao estado IDLE, pronto para a próxima transmissão.
+### `de2_loopback_top.v`
 
-### uart_rx.v
+[cite_start]Este é o módulo de topo que integra todos os outros componentes e faz a interface com os periféricos da placa DE2[cite: 28].
 
-O Receptor UART (UART_RX) é um módulo que converte um fluxo de dados serial de entrada (rx_in) de volta para um byte de dados paralelo (8 bits). Ele opera de forma assíncrona, pois não recebe um sinal de clock junto com os dados, dependendo de um clock interno de alta precisão (baud_clk_en) para sincronização.
+-   [cite_start]**Arquitetura:** Instancia os módulos `uart_tx`, `uart_rx` e `crc8`[cite: 38, 40, 42].
+-   [cite_start]**Teste de Loopback:** A principal característica deste módulo é a conexão direta da saída do transmissor à entrada do receptor (`wire rx = tx;`)[cite: 39]. Isso permite que o sistema se autovalide sem a necessidade de um dispositivo externo.
+-   **Interface com o Usuário:**
+    -   [cite_start]`KEY[0]` funciona como um reset ativo-baixo para todo o sistema[cite: 29].
+    -   [cite_start]`KEY[1]` é usado para iniciar a transmissão de dados[cite: 31]. [cite_start]Um detector de borda de subida garante que um único pulso `tx_start` seja gerado a cada vez que o botão é pressionado[cite: 33, 35].
+    -   [cite_start]`SW[7:0]` fornecem o byte de dados a ser transmitido[cite: 34].
+-   **Exibição de Resultados:**
+    -   [cite_start]Para garantir uma visualização estável, os resultados da recepção são armazenados em registradores (latches)[cite: 43].
+    -   [cite_start]`LEDR[7:0]` exibem o último byte recebido corretamente (`last_rx`)[cite: 48].
+    -   [cite_start]`HEX2` exibe o nibble menos significativo do byte recebido[cite: 59].
+    -   [cite_start]`HEX5` e `HEX4` exibem **"0k"** se a recepção foi bem-sucedida (`ok_latch` é ativado quando `!rx_error`)[cite: 47, 61, 62]. [cite_start]A lógica para renderizar os caracteres nos displays de 7 segmentos está implementada em funções internas (`hex7` e `glyph7`)[cite: 50, 55].
+    -   [cite_start]`LEDG` exibe sinais de status como `rx_valid`, `tx_busy` e `rx_error`[cite: 49].
 
-O módulo usa uma Máquina de Estados Finitos (FSM) para gerenciar o processo de recepção. O fluxo de operação é o seguinte:
+## Funcionamento e Demonstração
 
-* Estado IDLE: O receptor fica monitorando a linha de entrada (rx_in), que permanece em nível lógico alto quando ociosa.
+O fluxo de operação para o teste de loopback é o seguinte:
 
-* Detecção de Bit de Start: O início de uma transmissão é detectado por uma transição de alto para baixo na linha rx_in. Ao detectar essa borda de descida, o módulo muda de estado.
+1.  [cite_start]**Entrada de Dados:** O usuário seleciona um byte de 8 bits utilizando as chaves `SW[7:0]`[cite: 34].
+2.  [cite_start]**Início da Transmissão:** O usuário pressiona `KEY[1]`[cite: 31, 33]. [cite_start]O módulo de topo detecta a borda de subida e envia um pulso `tx_start` para o `uart_tx`[cite: 35].
+3.  [cite_start]**Transmissão e Loopback:** O `uart_tx` serializa o byte e o envia através da sua saída `tx`[cite: 38]. [cite_start]Devido à conexão de loopback, este sinal é imediatamente recebido pela entrada `rx` do `uart_rx`[cite: 39].
+4.  [cite_start]**Recepção e Validação:** O `uart_rx` processa o fluxo serial, reconstrói o byte e, ao final, verifica o stop bit[cite: 40]. [cite_start]Se tudo estiver correto, ele ativa `rx_valid`[cite: 21].
+5.  [cite_start]**Cálculo do CRC:** A ativação de `rx_valid` serve como gatilho para o módulo `crc8`, que calcula o CRC do byte recém-chegado[cite: 42].
+6.  [cite_start]**Exibição dos Resultados:** O byte recebido e o status de sucesso ("0k") são armazenados nos registradores e exibidos de forma contínua nos LEDs e displays de 7 segmentos até que uma nova transmissão seja iniciada[cite: 43, 46, 47, 48, 61, 62].
 
-* Sincronização e Amostragem: Para garantir a correta amostragem dos bits, o receptor espera por um período de meio bit após a detecção do bit de start. Isso permite que a amostragem dos dados ocorra no meio de cada período de bit, onde o sinal é mais estável.
-
-* Recepção dos Bits de Dados: Um contador (bit_counter) é usado para receber os 8 bits de dados, um a um. Os bits são lidos em cada ciclo de baud_clk_en e armazenados em um registrador de deslocamento. A ordem de recebimento é do bit menos significativo (LSB) para o mais significativo (MSB).
-
-* Verificação do Bit de Stop: Após receber os 8 bits de dados, o receptor verifica se o próximo bit é um bit de stop (nível lógico alto).
-
-* Disponibilização dos Dados: Se a recepção for bem-sucedida, o byte de dados completo é transferido para a saída (data_out) e um sinal de rx_done é ativado por um ciclo de clock, indicando que um novo dado está disponível.
-
-Após a verificação do bit de stop, o módulo retorna ao estado IDLE, pronto para uma nova recepção.
-
-## crc8.v e display_decoder.v 
-
-### crc8.v
-
-Este módulo é um componente de lógica digital assíncrona, projetado para calcular e verificar a integridade de dados através do algoritmo CRC-8. Sua função é implementar a divisão polinomial para gerar um valor de 8 bits (o CRC) que serve como um código de detecção de erros.
-
-A implementação é baseada no polinômio gerador padrão x^8 + x^2 + x + 1.
-
-* No Transmissor: O módulo calcula o CRC dos dados a serem transmitidos. O valor resultante é então anexado ao pacote de dados.
-
-* No Receptor: O módulo recalcula o CRC sobre o pacote de dados recebido (incluindo o CRC transmitido). O valor final do cálculo deve ser zero em uma transmissão sem erros.
-
-A utilização do CRC-8 assegura a detecção de erros em bit-flips únicos e em rajadas de erro, garantindo a confiabilidade da comunicação serial.
-
-### display_decoder.v
-
-Este módulo atua como uma interface de saída, convertendo um código de status binário em um padrão de bits adequado para controlar um display de 7 segmentos. A sua arquitetura é puramente combinacional, pois a saída é uma função direta e imediata da entrada.
-
-A lógica interna utiliza uma estrutura case para mapear os códigos de status fornecidos pelo módulo de controle (controller_fsm) para os padrões de ativação dos segmentos. Na placa DE2, que utiliza displays de ânodo comum, um nível lógico 0 é requerido para acender um segmento.
-
-* O módulo recebe um código de status (ex: 01 para sucesso, 00 para erro).
-
-* Ele traduz esse código para os caracteres "OK" ou "ER", que são então exibidos nos displays de 7 segmentos.
-
-O decodificador é essencial para fornecer feedback visual em tempo real sobre o status da verificação do CRC, servindo como a interface primária entre o sistema de lógica digital e o usuário.
-
-## controller_fsm.v 
-
-Este módulo atua como a unidade de controle central do sistema. Ele é uma máquina de estados finitos que gerencia o fluxo de trabalho completo da comunicação UART, incluindo a inicialização, o cálculo e a verificação do CRC, e o controle dos módulos de transmissão e recepção. Ele também gerencia a exibição dos resultados no display de 7 segmentos.
-
-Funcionamento
-A FSM segue uma sequência de estados para cada ciclo de transmissão e recepção:
-
-* IDLE: Espera um botão ser pressionado para iniciar.
-
-* CALC_CRC: Envia cada byte da mensagem para o crc8.v para calcular o CRC.
-
-* TX_MSG: Transmite a mensagem, byte a byte, usando o uart_tx.v.
-
-* TX_CRC: Transmite o valor final do CRC.
-
-* WAIT_RX: Espera o início da recepção do outro lado.
-
-* RX_MSG: Recebe os bytes da mensagem e os envia para o crc8.v para a verificação.
-
-* RX_CRC: Recebe o byte do CRC enviado pelo outro lado.
-
-* VERIFY_CRC: Compara o CRC calculado com o recebido para determinar o resultado.
-
-* UPDATE_DISPLAY: Ativa a saída que controla o display_decoder.v para mostrar "OK" ou "ERRO".
-
-* DONE: Mantém o estado final até o próximo reset.
-
-## top_level.v 
-
-Este módulo é a camada superior da hierarquia do projeto. Ele não contém lógica de processamento complexa, mas sim a arquitetura que define as conexões entre os submódulos e a interface com o mundo exterior (os pinos da placa DE2). Sua função é instanciar cada um dos módulos criados anteriormente (clock_divider, uart_tx, uart_rx, etc.) e ligar suas portas de entrada e saída.
-
-Funcionamento
-* Definição dos Pinos: As portas de entrada e saída do módulo top_level correspondem diretamente aos pinos físicos da placa FPGA (como o clock de 50 MHz, os botões e os displays de 7 segmentos).
-
-* Declaração de Fios (Wires): Vários fios internos são declarados para servir como "pontes" entre os diferentes módulos, permitindo que os sinais de controle e dados fluam entre eles.
-
-* Instanciação dos Módulos: Cada submódulo é instanciado e conectado usando seus nomes de porta e os fios internos definidos.
-
-# Implementação
-
-A atribuição de pinos é a fase em que as portas de entrada e saída lógicas definidas no módulo top_level.v são mapeadas para os pinos físicos do circuito integrado FPGA. Este procedimento é realizado por meio de uma ferramenta de síntese, como o Quartus Prime Pin Planner, utilizando a documentação de layout da placa (no caso, a DE2).
-
-Depois, ocorre a compilação e envio para a FPGA.
-
-A demonstração da funcionalidade full-duplex é a prova final da capacidade de comunicação bidirecional e simultânea do sistema. Esta característica é fundamental para aplicações que exigem troca de dados em tempo real.
-
-
-* Teste de Loopback: Utilizando uma única placa, o pino UART_TXD é fisicamente conectado ao UART_RXD. O projeto é configurado para enviar um pacote de dados com CRC e, em seguida, receber e verificar o mesmo pacote. A funcionalidade é validada quando o sistema realiza ambas as operações com sucesso e exibe um resultado positivo na verificação de CRC, indicando que a arquitetura do transmissor e do receptor operam de forma independente e correta.
-
-
+A funcionalidade full-duplex é inerente à arquitetura, pois os módulos `uart_tx` e `uart_rx` são completamente independentes, com suas próprias máquinas de estado, permitindo que operem simultaneamente. O teste de loopback valida com sucesso a lógica de ambos os módulos de uma só vez.

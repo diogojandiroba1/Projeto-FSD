@@ -1,80 +1,102 @@
-module uart_rx (
-    input clk,
-    input reset,
-    input rx,
-    output reg [7:0] rx_data,
-    output reg rx_valid,
-    output reg rx_error
+// -----------------------------------------------------------------------------
+// UART Receiver (parametrizable)
+// - Recebe LSB primeiro
+// - Sincroniza entrada RX (2FF) e amostra no meio de cada bit
+// -----------------------------------------------------------------------------
+module uart_rx #(
+    parameter CLK_FREQ  = 50_000_000,
+    parameter BAUD_RATE = 115200
+)(
+    input        clk,
+    input        reset,
+    input        rx,           // entrada serial
+    output reg [7:0] rx_data,  // byte recebido
+    output reg       rx_valid, // 1 = dado válido disponível
+    output reg       rx_error  // 1 = erro de stop bit
 );
 
-    parameter CLK_FREQ = 50_000_000;
-    parameter BAUD_RATE = 115200;
-    localparam BIT_TIME = CLK_FREQ / BAUD_RATE;
-    localparam HALF_BIT = BIT_TIME / 2;
-    
-    reg [2:0] state;
-    reg [15:0] counter;
+    localparam BIT_TIME  = CLK_FREQ / BAUD_RATE; // ciclos por bit
+    localparam HALF_BIT  = BIT_TIME / 2;
+
+    reg [3:0] state;
+    reg [12:0] counter;
+    reg [2:0] bit_idx;
     reg [7:0] shift_reg;
-    reg [3:0] bit_counter;
+
+    // Estados
+    localparam IDLE  = 0,
+               START = 1,
+               DATA  = 2,
+               STOP  = 3;
+
+    // Sincronizador de RX
+    reg rx_ff1, rx_ff2;
+    always @(posedge clk) begin
+        rx_ff1 <= rx;
+        rx_ff2 <= rx_ff1;
+    end
+    wire rx_s = rx_ff2;
 
     always @(posedge clk or posedge reset) begin
         if (reset) begin
-            state <= 0;
-            rx_data <= 8'h00;
-            rx_valid <= 1'b0;
-            rx_error <= 1'b0;
-            counter <= 0;
-            bit_counter <= 0;
-            shift_reg <= 8'h00;
+            state    <= IDLE;
+            counter  <= 0;
+            bit_idx  <= 0;
+            rx_valid <= 0;
+            rx_error <= 0;
+            rx_data  <= 8'h00;
+            shift_reg<= 8'h00;
         end else begin
-            rx_valid <= 1'b0;
-            rx_error <= 1'b0;
-            
             case (state)
-                0: begin // Wait for start bit
-                    if (rx == 1'b0) begin
-                        state <= 1;
+                IDLE: begin
+                    rx_valid <= 0;
+                    rx_error <= 0;
+                    counter  <= 0;
+                    if (rx_s == 1'b0) begin
+                        state   <= START;
                         counter <= 0;
-                    end
-                end
-                
-                1: begin // Verify start bit
-                    if (counter == HALF_BIT - 1) begin
-                        if (rx == 1'b0) begin
-                            state <= 2;
-                            counter <= 0;
-                            bit_counter <= 0;
-                        end else begin
-                            state <= 0;
-                            rx_error <= 1'b1;
-                        end
-                    end else begin
-                        counter <= counter + 1;
-                    end
-                end
-                
-                2: begin // Receive data bits
-                    if (counter == BIT_TIME - 1) begin
-                        counter <= 0;
-                        if (bit_counter < 8) begin
-                            shift_reg <= {rx, shift_reg[7:1]};
-                            bit_counter <= bit_counter + 1;
-                        end else begin
-                            if (rx == 1'b1) begin
-                                rx_data <= shift_reg;
-                                rx_valid <= 1'b1;
-                            end else begin
-                                rx_error <= 1'b1;
-                            end
-                            state <= 0;
-                        end
-                    end else begin
-                        counter <= counter + 1;
                     end
                 end
 
-                default: state <= 0;
+                START: begin
+                    if (counter == HALF_BIT-1) begin
+                        if (rx_s == 1'b0) begin
+                            state    <= DATA;
+                            counter  <= 0;
+                            bit_idx  <= 0;
+                        end else state <= IDLE; // falso start
+                    end else counter <= counter + 1;
+                end
+
+                DATA: begin
+                    if (counter == BIT_TIME-1) begin
+                        counter   <= 0;
+                        shift_reg <= {rx_s, shift_reg[7:1]};
+                        if (bit_idx == 7) begin
+                            state   <= STOP;
+                        end
+                        bit_idx <= bit_idx + 1;
+                    end else counter <= counter + 1;
+                end
+
+                STOP: begin
+                    if (counter == BIT_TIME-1) begin
+                        counter  <= 0;
+                        state    <= IDLE;
+                        if (rx_s == 1'b1) begin
+                            rx_data  <= shift_reg;
+                            rx_valid <= 1'b1;
+                            rx_error <= 0;
+                        end else begin
+                            rx_valid <= 0;
+                            rx_error <= 1'b1;
+                        end
+                    end else counter <= counter + 1;
+                end
+
+                default: state <= IDLE;
             endcase
         end
     end
+
 endmodule
