@@ -1,10 +1,3 @@
-// -----------------------------------------------------------------------------
-// CRC-8 simples (polinômio x^8 + x^2 + x + 1 = 0x07), byte a byte
-// Interface:
-//  - data_valid: quando sobe, calcula o CRC do 'data' e solta crc_ready por 1 ciclo
-//  - crc: valor do CRC do byte fornecido (não é acumulativo entre bytes aqui)
-// OBS: Se quiser acumulativo em fluxo, é fácil adaptar (manter registrador de crc).
-// -----------------------------------------------------------------------------
 module crc8 (
     input        clk,
     input        reset,

@@ -1,10 +1,3 @@
-// -----------------------------------------------------------------------------
-// DE2 internal UART loopback top (v4)
-// Changes:
-//  - "OK" on HEX5/HEX4 now uses glyphs that are reliably renderable on 7-seg.
-//    * 'O' rendered as '0' (HEX5)
-//    * 'k' approximated (HEX4) using segments c,d,f,g (looks like a small 'k').
-// -----------------------------------------------------------------------------
 module de2_loopback_top (
     input         CLOCK_50,
     input  [3:0]  KEY,
@@ -23,11 +16,11 @@ module de2_loopback_top (
 
 
 
-    // Clock/reset
+  
     wire clk   = CLOCK_50;
     wire reset = ~KEY[0]; // ativo-baixo
 
-    // Botão de envio (KEY[1]) com borda de subida e antirruído simples
+    
     reg btn_ff1, btn_ff2;
     always @(posedge clk or posedge reset) begin
         if (reset) begin
@@ -46,7 +39,7 @@ module de2_loopback_top (
     // UART TX
     wire tx, tx_busy;
     reg [7:0] tx_data;
-    wire tx_start = btn_rise & ~tx_busy; // evita re-disparo durante busy
+    wire tx_start = btn_rise & ~tx_busy; 
 
     always @(posedge clk or posedge reset) begin
         if (reset) tx_data <= 8'h00;
@@ -96,7 +89,7 @@ module de2_loopback_top (
             last_crc <= 8'h00;
             ok_latch <= 1'b0;
         end else begin
-            if (tx_start) ok_latch <= 1'b0; // limpa OK ao iniciar novo envio
+            if (tx_start) ok_latch <= 1'b0; 
             if (rx_valid) begin
                 last_rx <= rx_data;
                 last_crc<= crc_value; // crc_ready costuma alinhar com rx_valid

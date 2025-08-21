@@ -1,8 +1,3 @@
-// -----------------------------------------------------------------------------
-// UART Transmitter (parametrizable)
-// - Envia LSB primeiro
-// - Usa CLK_FREQ e BAUD_RATE para calcular BIT_TIME
-// -----------------------------------------------------------------------------
 module uart_tx #(
     parameter CLK_FREQ  = 50_000_000,
     parameter BAUD_RATE = 115200
@@ -18,7 +13,7 @@ module uart_tx #(
     localparam BIT_TIME = CLK_FREQ / BAUD_RATE; // ciclos por bit (~434 em 50MHz/115200)
 
     reg [3:0] state;
-    reg [12:0] counter; // suficiente para valores até 5208 (9600 baud)
+    reg [12:0] counter;
     reg [2:0] bit_idx;
     reg [7:0] shift_reg;
 

@@ -1,8 +1,3 @@
-// -----------------------------------------------------------------------------
-// UART Receiver (parametrizable)
-// - Recebe LSB primeiro
-// - Sincroniza entrada RX (2FF) e amostra no meio de cada bit
-// -----------------------------------------------------------------------------
 module uart_rx #(
     parameter CLK_FREQ  = 50_000_000,
     parameter BAUD_RATE = 115200
